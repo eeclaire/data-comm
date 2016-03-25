@@ -39,6 +39,7 @@
 
 void DelayMsec(unsigned int);
 char generateCodeword(char p);
+char getSyndrome(char r);
 
 int main() {
     int rlen, tlen, i;
@@ -162,27 +163,32 @@ int main() {
                         DelayMsec(50);
                         mPORTDClearBits(BIT_0); // LED1=0
                     }
-                } else { // Receiving "other" message
-                    // Blink lights for mood
-                    mPORTDSetBits(BIT_0); // LED2=1
-
+                } 
+                
+                if (rbfr[1] == 76) // L Transmit of a Linear Block Code
+                {
+                    // this is where you decode the receive
+                    int r;
+                    for(r=2; r<44; r++){
+                        int s;
+                        s = getSyndrome(rbfr[r]);
+                    }
                 }
 
                 if (rbfr[1] == 84) //T transfer
                 {
+                    tlen = 44; // length of codeword array + 2 start bytes + null
+                    tbfr[0] = 00;
+                    tbfr[1] = 76;   // Send a message
+                    
                     int j;
-
-                    mPORTDSetBits(BIT_1); // LED2=1
-                    tlen = strlen(fullText);
-
                     // Copy the long text into the transmit buffer
-                    for (j = 0; j < tlen; j++) {
-                        tbfr[j] = fullText[j];
+                    for (j = 0; j < tlen-2; j++) {
+                        tbfr[j+2] = codeword[j];
                     }
 
                     send(StreamSock, tbfr, tlen + 1, 0);
-                    DelayMsec(delayT);
-                    mPORTDClearBits(BIT_1); // LED3=0                  
+                    DelayMsec(delayT);                 
                 }
                 mPORTDClearBits(BIT_0); // LED1=0
 
@@ -252,3 +258,24 @@ char generateCodeword(char p){
     return x;
 }
 
+
+char getSyndrome(char r){
+    int bitVal2, bitVal1, bitVal0;
+    char z = 0;
+    char Hb2 = 60;
+    char Hb1 = 50;
+    char Hb0 = 25;
+    
+    bitVal2 = (GetBit(Hb2,5)&GetBit(r,5))^(GetBit(Hb2,4)&GetBit(r,4))^(GetBit(Hb2,3)&GetBit(r,3))^(GetBit(Hb2,2)&GetBit(r,2))^(GetBit(Hb2,1)&GetBit(r,1))^(GetBit(Hb2,0)&GetBit(r,0));
+    bitVal1 = (GetBit(Hb1,5)&GetBit(r,5))^(GetBit(Hb1,4)&GetBit(r,4))^(GetBit(Hb1,3)&GetBit(r,3))^(GetBit(Hb1,2)&GetBit(r,2))^(GetBit(Hb1,1)&GetBit(r,1))^(GetBit(Hb1,0)&GetBit(r,0));
+    bitVal0 = (GetBit(Hb0,5)&GetBit(r,5))^(GetBit(Hb0,4)&GetBit(r,4))^(GetBit(Hb0,3)&GetBit(r,3))^(GetBit(Hb0,2)&GetBit(r,2))^(GetBit(Hb0,1)&GetBit(r,1))^(GetBit(Hb0,0)&GetBit(r,0));
+    
+    if(bitVal2==1)
+        SetBit(z,2);
+    if(bitVal1==1)
+        SetBit(z,1);
+    if(bitVal0==0)
+        SetBit(z,0);
+    
+    return z;
+}
