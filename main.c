@@ -167,12 +167,19 @@ int main() {
                 
                 if (rbfr[1] == 76) // L Transmit of a Linear Block Code
                 {
+                    int numErr = 0; // will count number of errors
                     // this is where you decode the receive
                     int r;
                     for(r=2; r<44; r++){
-                        int s;
+                        int s = 0;
                         s = getSyndrome(rbfr[r]);
+                        
+                        if (s!=0){
+                            numErr++;
+                        }
                     }
+                    
+                    int errors = numErr;
                 }
 
                 if (rbfr[1] == 84) //T transfer
@@ -248,7 +255,8 @@ char generateCodeword(char p){
     char Gb2 = 38;  // 00100110
     // 6 because of the (6,3) LBC
     for (i=0; i<6; i++){
-        bitVal = ((GetBit(p,2))&(GetBit(Gb2,i)))^((GetBit(p,1))&(GetBit(Gb1,i)))^((GetBit(p,0))&(GetBit(Gb0,i)));
+        bitVal = ((GetBit(p,2))&(GetBit(Gb2,i)))^((GetBit(p,1))&(GetBit(Gb1,i)))
+                ^((GetBit(p,0))&(GetBit(Gb0,i)));
         
         if(bitVal == 1)
             SetBit(x,i);
@@ -266,6 +274,9 @@ char getSyndrome(char r){
     char Hb1 = 50;
     char Hb0 = 25;
     
+    int s5 = (GetBit(Hb2,5)&GetBit(r,5));
+    int s4 = (GetBit(Hb2,4)&GetBit(r,4));
+    
     bitVal2 = (GetBit(Hb2,5)&GetBit(r,5))^(GetBit(Hb2,4)&GetBit(r,4))^(GetBit(Hb2,3)&GetBit(r,3))^(GetBit(Hb2,2)&GetBit(r,2))^(GetBit(Hb2,1)&GetBit(r,1))^(GetBit(Hb2,0)&GetBit(r,0));
     bitVal1 = (GetBit(Hb1,5)&GetBit(r,5))^(GetBit(Hb1,4)&GetBit(r,4))^(GetBit(Hb1,3)&GetBit(r,3))^(GetBit(Hb1,2)&GetBit(r,2))^(GetBit(Hb1,1)&GetBit(r,1))^(GetBit(Hb1,0)&GetBit(r,0));
     bitVal0 = (GetBit(Hb0,5)&GetBit(r,5))^(GetBit(Hb0,4)&GetBit(r,4))^(GetBit(Hb0,3)&GetBit(r,3))^(GetBit(Hb0,2)&GetBit(r,2))^(GetBit(Hb0,1)&GetBit(r,1))^(GetBit(Hb0,0)&GetBit(r,0));
@@ -274,7 +285,7 @@ char getSyndrome(char r){
         SetBit(z,2);
     if(bitVal1==1)
         SetBit(z,1);
-    if(bitVal0==0)
+    if(bitVal0==1)
         SetBit(z,0);
     
     return z;
