@@ -54,18 +54,51 @@ int main() {
     // Variable delay time in ms
     int delayT = 0;
 
-    // Declare the arrays for the full text to be transmitted
+    // Declare the arrays for the full text to be transmitted -----------------
     char fullText[18] = "EE is my avocation";
-    int fullLen = strlen(fullText) + 1; // Obtain length of fullText1 array
-    // add one because strlen does not include the null terminator
+    int fullLen = strlen(fullText); // Obtain length of fullText1 array
+    // !! strlen does not include the null terminator
     
-    char parpack = 4;   // Test case
-    char codeword;
-    codeword = generateCodeword(parpack);
-
-    // CREATE PARITY MATRICES HERE
-    //generateParity(fullText, fullLen);
-
+    // Obtain the data packet array
+    char info[42];
+    int blocks;
+    int packets;
+    int third;
+    int test = 0;
+    
+    // Initialize the array
+    int z;
+    for (z=0; z<42; z++){
+        info[z] = 0;
+    }
+    
+    int byte=0;
+    for(blocks=0;blocks<6;blocks++){   
+        int bbc = 6;    // byte bit counter
+        
+        for(packets=0; packets <7; packets++){
+            for(third=2; third >=0; third--){
+                test = GetBit(fullText[byte], bbc);
+                if(test==1)
+                    SetBit(info[packets+blocks*7], third);
+                else
+                    ClearBit(info[packets+blocks*7], third);
+                bbc--;
+                if(bbc==-1){
+                    bbc=6;
+                    byte++;
+                }
+            }
+        }
+    }
+    
+    // Create the codeword matrix ---------------------------------------------
+    char codeword[42];
+    int c;
+    for (c=0;c<42;c++){
+        codeword[c] = generateCodeword(info[c]);
+    }
+  
     // LED setup
     mPORTDSetPinsDigitalOut(BIT_0 | BIT_1 | BIT_2); // RD0, RD1 and RD2 as outputs
     mPORTDClearBits(BIT_0 | BIT_1 | BIT_2);
