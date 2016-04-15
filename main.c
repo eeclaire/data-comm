@@ -69,6 +69,7 @@ int main() {
     int P = 4;
     
     // STOP AND WAIT VARIABLES
+    int sendWait = 0;
     int currentP = 1;
     int rcvdSeqs = 0;
     int sentSeqs = 0;
@@ -142,27 +143,40 @@ int main() {
 
                 if (rbfr[1] == 76) // L Transmit of a Linear Block Code
                 {
+                    rcvdSeqs++;
+                    
                     int j;
                     for(j=0;j<16;j++){
                         rcvdPackets[(rbfr[18]-1)%P][j] = rbfr[j+2];
                     }
                     
-                    if((rbfr[18]-1)%P == 0){
-                        // Send ACK or something
-                        //tbfr[1] = 
+                    //if((rbfr[18]-1)%P == 0){
+                    if(rcvdSeqs%P == 0){
+                        // Send ACK for all okay
+                        tbfr[1] = 84;
+                        tbfr[2] = 13;
+                        tbfr[3] = 0;
+                        send(StreamSock, tbfr, 4, 0);
+                        DelayMsec(delayT);
                         // Reset number of sequence numbers received
                         rcvdSeqs = 0;
-                    }
-                    
+                        // Maybe save some of this text in a master rcvd array 
+                    }   
                     int checkRBFR = 1;
                 }
 
                 if (rbfr[1] == 84) //T transfer
                 {
+                    if (rbfr[2] == 13){
+                        sendWait = 0;
+                        int wegud = 1;
+                    }
                     // 2 bytes for header, 16 for data, 1 for seq #, 1 for null
                     tlen = plen + 4;
                     
-                    if((currentP-1)%P==0){
+                    if((currentP-1)%P==0){ 
+                        if(currentP > 1)
+                            sendWait = 1;
                         
                         int p,q;
                         for (p=0;p<4;p++){
@@ -180,9 +194,11 @@ int main() {
                         tbfr[j] = packet[j];
                     }
 
-                    send(StreamSock, tbfr, tlen, 0);
-                    DelayMsec(delayT);
-                    currentP++;
+                    if (sendWait == 0){
+                        send(StreamSock, tbfr, tlen, 0);
+                        DelayMsec(delayT);
+                        currentP++;
+                    }
                      
                 }
                 mPORTDClearBits(BIT_0); // LED1=0
