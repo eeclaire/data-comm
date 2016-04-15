@@ -1,3 +1,4 @@
+
 //	PIC32 Server - Microchip BSD stack socket API
 //	MPLAB X C32 Compiler     PIC32MX795F512L
 //      Microchip DM320004 Ethernet Starter Board
@@ -42,6 +43,8 @@ char generateCodeword(char p);
 char getSyndrome(char r);
 char retrieveInfo(char r);
 
+void buildTransmitPacket(char packet[], int plen);
+
 int main() {
     int rlen, tlen;
     SOCKET srvr, StreamSock = INVALID_SOCKET;
@@ -67,7 +70,9 @@ int main() {
     int packets;
     int third;
     int test = 0;
-
+    char packet[18];
+    int plen = 18;
+    
     // Initialize the array
     int z;
     for (z = 0; z < 42; z++) {
@@ -168,6 +173,8 @@ int main() {
 
                 if (rbfr[1] == 76) // L Transmit of a Linear Block Code
                 {
+                    int checkRBFR = 1;
+                    /*
                     int numErr = 0; // will count number of errors
                     // this is where you decode the receive
                     int r;
@@ -238,10 +245,24 @@ int main() {
                         }
                     } 
                     int stuff = 0; // Waste time for a sec
+                    */
                 }
 
                 if (rbfr[1] == 84) //T transfer
                 {
+                    
+                    buildTransmitPacket(packet, plen);
+                    tlen = plen + 3;
+                    
+                    tbfr[0] = 00;
+                    tbfr[1] = 76; // Send a message
+                    
+                    int j;
+                    // Copy the long text into the transmit buffer
+                    for (j = 0; j < tlen - 2; j++) {
+                        tbfr[j+2] = packet[j];
+                    }
+                    /*
                     tlen = 44; // length of codeword array + 2 start bytes + null
                     tbfr[0] = 00;
                     tbfr[1] = 76; // Send a message
@@ -251,9 +272,10 @@ int main() {
                     for (j = 0; j < tlen - 2; j++) {
                         tbfr[j + 2] = codeword[j];
                     }
-
-                    send(StreamSock, tbfr, tlen + 1, 0);
+                    * */
+                    send(StreamSock, tbfr, tlen, 0);
                     DelayMsec(delayT);
+                     
                 }
                 mPORTDClearBits(BIT_0); // LED1=0
             } else if (rlen < 0) {
@@ -272,6 +294,22 @@ void DelayMsec(unsigned int msec) {
     tWait = (SYS_FREQ / 2000) * msec;
     tStart = ReadCoreTimer();
     while ((ReadCoreTimer() - tStart) < tWait);
+}
+
+
+void buildTransmitPacket(char packet[], int plen){
+    packet[0] = 0;
+    packet[1] = 76;
+    
+    // Fill the 16 bytes of data
+    int i;
+    for(i=0; i<16; i++){
+        packet[i+2] = 65;
+    }
+    
+    
+    
+    //memset(packet, 'a', plen);
 }
 
 // CREATING LINEAR BLOCK CODE JAMS
