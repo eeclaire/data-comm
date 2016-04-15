@@ -43,7 +43,7 @@ char generateCodeword(char p);
 char getSyndrome(char r);
 char retrieveInfo(char r);
 
-void buildTransmitPacket(char packet[], int plen);
+void buildTransmitPacket(char packet[], int plen, int seq, char srcPackets[4][16]);
 
 int main() {
     int rlen, tlen;
@@ -60,52 +60,21 @@ int main() {
     int delayT = 0;
 
     // Declare the arrays for the full text to be transmitted -----------------
-    char fullText[18] = "EE is my avocation";
+    char fullText[128] = "aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbccccccccccccccccddddddddddddddddeeeeeeeeeeeeeeeeffffffffffffffffgggggggggggggggghhhhhhhhhhhhhhhh";
     int fullLen = strlen(fullText); // Obtain length of fullText1 array
-    // !! strlen does not include the null terminator
 
-    // Obtain the data packet array
-    char info[42];
-    int blocks;
-    int packets;
-    int third;
-    int test = 0;
-    char packet[18];
-    int plen = 18;
+    // STOP AND WAIT "CONSTANTS"
+    char packet[20];
+    int plen = 16;
+    int P = 4;
     
-    // Initialize the array
-    int z;
-    for (z = 0; z < 42; z++) {
-        info[z] = 0;
-    }
-
-    int byte = 0;
-    for (blocks = 0; blocks < 6; blocks++) {
-        int bbc = 6; // byte bit counter
-
-        for (packets = 0; packets < 7; packets++) {
-            for (third = 2; third >= 0; third--) {
-                test = GetBit(fullText[byte], bbc);
-                if (test == 1)
-                    SetBit(info[packets + blocks * 7], third);
-                else
-                    ClearBit(info[packets + blocks * 7], third);
-                bbc--;
-                if (bbc == -1) {
-                    bbc = 6;
-                    byte++;
-                }
-            }
-        }
-    }
-
-    // Create the codeword matrix ---------------------------------------------
-    char codeword[42];
-    int c;
-    for (c = 0; c < 42; c++) {
-        codeword[c] = generateCodeword(info[c]);
-    }
-
+    // STOP AND WAIT VARIABLES
+    int currentP = 1;
+    int rcvdSeqs = 0;
+    int sentSeqs = 0;
+    char sendPackets[4][16];
+    char rcvdPackets[4][16];
+    
     // LED setup
     mPORTDSetPinsDigitalOut(BIT_0 | BIT_1 | BIT_2); // RD0, RD1 and RD2 as outputs
     mPORTDClearBits(BIT_0 | BIT_1 | BIT_2);
@@ -155,7 +124,7 @@ int main() {
             // If we have a valid socket
             if (StreamSock != INVALID_SOCKET) {
                 tlen = 1296; // send buffer size
-                setsockopt(StreamSock, SOL_SOCKET, SO_SNDBUF, (char*) &tlen, sizeof (int));
+                setsockopt(StreamSock, SOL_SOCKET, TCP_NODELAY, (char*) &tlen, sizeof (int));
             }
         } else {
             // receive TCP data
@@ -173,108 +142,47 @@ int main() {
 
                 if (rbfr[1] == 76) // L Transmit of a Linear Block Code
                 {
+                    int j;
+                    for(j=0;j<16;j++){
+                        rcvdPackets[(rbfr[18]-1)%P][j] = rbfr[j+2];
+                    }
+                    
+                    if((rbfr[18]-1)%P == 0){
+                        // Send ACK or something
+                        //tbfr[1] = 
+                        // Reset number of sequence numbers received
+                        rcvdSeqs = 0;
+                    }
+                    
                     int checkRBFR = 1;
-                    /*
-                    int numErr = 0; // will count number of errors
-                    // this is where you decode the receive
-                    int r;
-                    for (r = 2; r < 44; r++) {
-                        int s = 0;
-                        s = getSyndrome(rbfr[r]);
-
-                        if (s != 0) {
-                            numErr++;
-                            switch (s) {
-                                case 1:
-                                    FlipBit(rbfr[r], 0);
-                                    break;
-                                case 2:
-                                    FlipBit(rbfr[r], 1);
-                                    break;
-                                // case 3 is an ERROR
-                                case 4:
-                                    FlipBit(rbfr[r], 2);
-                                    break;
-                                case 5:
-                                    FlipBit(rbfr[r], 3);
-                                    break;
-                                case 6:
-                                    FlipBit(rbfr[r], 5);
-                                    break;
-                                case 7:
-                                    FlipBit(rbfr[r], 4);
-                                    break;
-                                default:
-                                    // do nothing. it's broken. cry.
-                                    break;
-                            }
-                        }
-                    }
-
-                    int errors = numErr;
-
-                    // Recuperate the original packets ------------------------
-                    int k;
-                    char pr[42];
-                    for (k = 2; k < 44; k++) {
-                        pr[k - 2] = retrieveInfo(rbfr[k]);
-                    }
-
-                    // Return back to characters ------------------------------
-                    char rdata[18];
-                    for(r=0; r<42; r++){
-                        rdata[r] = 0;
-                    }
-                    
-                    int cntr = 6;
-                    int db = 0;
-                    int rthirds;
-                    
-                    for(r=0; r<42; r++){
-                        for(rthirds=2; rthirds>=0; rthirds--){
-                            int y = GetBit(pr[r], rthirds);
-                            if(y==1)
-                                SetBit(rdata[db],cntr);
-                            // if it isn't set, it will just remain zero
-                            
-                            cntr--;
-                            if(cntr==-1){
-                                cntr = 6;
-                                db++;
-                            }
-                        }
-                    } 
-                    int stuff = 0; // Waste time for a sec
-                    */
                 }
 
                 if (rbfr[1] == 84) //T transfer
                 {
+                    // 2 bytes for header, 16 for data, 1 for seq #, 1 for null
+                    tlen = plen + 4;
                     
-                    buildTransmitPacket(packet, plen);
-                    tlen = plen + 3;
-                    
-                    tbfr[0] = 00;
-                    tbfr[1] = 76; // Send a message
-                    
-                    int j;
-                    // Copy the long text into the transmit buffer
-                    for (j = 0; j < tlen - 2; j++) {
-                        tbfr[j+2] = packet[j];
+                    if((currentP-1)%P==0){
+                        
+                        int p,q;
+                        for (p=0;p<4;p++){
+                            for (q=0;q<16;q++){
+                                sendPackets[p][q] = fullText[((currentP-1)+p)*16];
+                            }
+                        }   
                     }
-                    /*
-                    tlen = 44; // length of codeword array + 2 start bytes + null
-                    tbfr[0] = 00;
-                    tbfr[1] = 76; // Send a message
+                    
+                    buildTransmitPacket(packet, tlen, currentP, sendPackets);
 
                     int j;
                     // Copy the long text into the transmit buffer
-                    for (j = 0; j < tlen - 2; j++) {
-                        tbfr[j + 2] = codeword[j];
+                    for (j = 0; j < tlen; j++) {
+                        tbfr[j] = packet[j];
                     }
-                    * */
+
                     send(StreamSock, tbfr, tlen, 0);
                     DelayMsec(delayT);
+                    currentP++;
                      
                 }
                 mPORTDClearBits(BIT_0); // LED1=0
@@ -290,101 +198,26 @@ int main() {
 
 void DelayMsec(unsigned int msec) {
     unsigned int tWait, tStart;
-
     tWait = (SYS_FREQ / 2000) * msec;
     tStart = ReadCoreTimer();
     while ((ReadCoreTimer() - tStart) < tWait);
 }
 
-
-void buildTransmitPacket(char packet[], int plen){
+void buildTransmitPacket(char packet[], int plen, int seq, char srcPackets[4][16]){
     packet[0] = 0;
     packet[1] = 76;
     
     // Fill the 16 bytes of data
     int i;
     for(i=0; i<16; i++){
-        packet[i+2] = 65;
+        // Note that the 4 here is for P
+        packet[i+2] = srcPackets[(seq-1)%4][i]; //65 + seq;
     }
     
+    // Set the sequence number
+    packet[18] = seq;
     
+    // Add the null terminator
+    packet[19] = 0;
     
-    //memset(packet, 'a', plen);
-}
-
-// CREATING LINEAR BLOCK CODE JAMS
-
-char generateCodeword(char p) {
-    int i;
-    char bitVal;
-    char x = 0; // implicit zero-stuffing
-
-    char Gb0 = 13; // 00001101
-    char Gb1 = 23; // 00010111
-    char Gb2 = 38; // 00100110
-    // 6 because of the (6,3) LBC
-    for (i = 0; i < 6; i++) {
-        bitVal = ((GetBit(p, 2))&(GetBit(Gb2, i)))^((GetBit(p, 1))&(GetBit(Gb1, i)))
-                ^((GetBit(p, 0))&(GetBit(Gb0, i)));
-
-        if (bitVal == 1)
-            SetBit(x, i);
-        // else if bitVal == 0, the bit is already clear
-    }
-
-    return x;
-}
-
-char getSyndrome(char r) {
-    int bitVal2, bitVal1, bitVal0;
-    char z = 0;
-    char Hb2 = 60;
-    char Hb1 = 50;
-    char Hb0 = 25;
-    
-    bitVal2 = (GetBit(Hb2, 5) & GetBit(r, 5))^(GetBit(Hb2, 4) & GetBit(r, 4))^
-            (GetBit(Hb2, 3) & GetBit(r, 3))^(GetBit(Hb2, 2) & GetBit(r, 2))^
-            (GetBit(Hb2, 1) & GetBit(r, 1))^(GetBit(Hb2, 0) & GetBit(r, 0));
-    bitVal1 = (GetBit(Hb1, 5) & GetBit(r, 5))^(GetBit(Hb1, 4) & GetBit(r, 4))^
-            (GetBit(Hb1, 3) & GetBit(r, 3))^(GetBit(Hb1, 2) & GetBit(r, 2))^
-            (GetBit(Hb1, 1) & GetBit(r, 1))^(GetBit(Hb1, 0) & GetBit(r, 0));
-    bitVal0 = (GetBit(Hb0, 5) & GetBit(r, 5))^(GetBit(Hb0, 4) & GetBit(r, 4))^
-            (GetBit(Hb0, 3) & GetBit(r, 3))^(GetBit(Hb0, 2) & GetBit(r, 2))^
-            (GetBit(Hb0, 1) & GetBit(r, 1))^(GetBit(Hb0, 0) & GetBit(r, 0));
-
-    if (bitVal2 == 1)
-        SetBit(z, 2);
-    if (bitVal1 == 1)
-        SetBit(z, 1);
-    if (bitVal0 == 1)
-        SetBit(z, 0);
-
-    return z;
-}
-
-char retrieveInfo(char r) {
-    int bitVal2, bitVal1, bitVal0;
-    char pr = 0;
-    char Rb2 = 32;
-    char Rb1 = 16;
-    char Rb0 = 8;
-
-    bitVal2 = (GetBit(Rb2, 5) & GetBit(r, 5))^(GetBit(Rb2, 4) & GetBit(r, 4))^
-            (GetBit(Rb2, 3) & GetBit(r, 3))^(GetBit(Rb2, 2) & GetBit(r, 2))^
-            (GetBit(Rb2, 1) & GetBit(r, 1))^(GetBit(Rb2, 0) & GetBit(r, 0));
-    bitVal1 = (GetBit(Rb1, 5) & GetBit(r, 5))^(GetBit(Rb1, 4) & GetBit(r, 4))^
-            (GetBit(Rb1, 3) & GetBit(r, 3))^(GetBit(Rb1, 2) & GetBit(r, 2))^
-            (GetBit(Rb1, 1) & GetBit(r, 1))^(GetBit(Rb1, 0) & GetBit(r, 0));
-    bitVal0 = (GetBit(Rb0, 5) & GetBit(r, 5))^(GetBit(Rb0, 4) & GetBit(r, 4))^
-            (GetBit(Rb0, 3) & GetBit(r, 3))^(GetBit(Rb0, 2) & GetBit(r, 2))^
-            (GetBit(Rb0, 1) & GetBit(r, 1))^(GetBit(Rb0, 0) & GetBit(r, 0));
-
-    if (bitVal2 == 1)
-        SetBit(pr, 2);
-    if (bitVal1 == 1)
-        SetBit(pr, 1);
-    if (bitVal0 == 1)
-        SetBit(pr, 0);
-
-    return pr;
 }
