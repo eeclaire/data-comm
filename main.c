@@ -21,6 +21,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include <plib.h>		// PIC32 Peripheral library functions and macros
 #include "tcpip_bsd_config.h"	// in \source
 #include <TCPIP-BSD\tcpip_bsd.h>
@@ -46,6 +47,8 @@ char retrieveInfo(char r);
 void buildTransmitPacket(char packet[], int plen, int seq, char srcPackets[4][16]);
 
 int main() {
+    srand(time(NULL));
+    
     int rlen, tlen;
     SOCKET srvr, StreamSock = INVALID_SOCKET;
     IP_ADDR curr_ip;
@@ -72,9 +75,25 @@ int main() {
     int sendWait = 0;
     int currentP = 1;
     int rcvdSeqs = 0;
+    int ACK = 0;
     int sentSeqs = 0;
     char sendPackets[4][16];
-    char rcvdPackets[4][16];
+    char fullSendPackets[4][20];
+    char rcvdPackets[4][20];
+    char rcvdData[128];
+    int sendIndex[4] = {0,0,0,0};
+    
+    // Initialize because I'm not convinced I'm not going insane
+    memset(fullSendPackets[0], 0, 20);
+    memset(fullSendPackets[1], 0, 20);
+    memset(fullSendPackets[2], 0, 20);
+    memset(fullSendPackets[3], 0, 20);
+    memset(rcvdPackets[0], 0, 20);
+    memset(rcvdPackets[1], 0, 20);
+    memset(rcvdPackets[2], 0, 20);
+    memset(rcvdPackets[3], 0, 20);
+    memset(rcvdData, 0, 128);
+            
     
     // LED setup
     mPORTDSetPinsDigitalOut(BIT_0 | BIT_1 | BIT_2); // RD0, RD1 and RD2 as outputs
@@ -141,20 +160,24 @@ int main() {
                     }
                 }
 
-                if (rbfr[1] == 76) // L Transmit of a Linear Block Code
+                if (rbfr[1] == 76) // Not a Linear Block Code, but I like L
                 {
                     rcvdSeqs++;
+                    if (rbfr[18] > ACK)
+                        ACK = rbfr[18];
                     
                     int j;
                     for(j=0;j<16;j++){
                         rcvdPackets[(rbfr[18]-1)%P][j] = rbfr[j+2];
+                        rcvdData[(rbfr[18]-1)*16+j] = rcvdPackets[(rbfr[18]-1)%P][j];
                     }
                     
                     //if((rbfr[18]-1)%P == 0){
                     if(rcvdSeqs%P == 0){
+                        DelayMsec(delayT);
                         // Send ACK for all okay
                         tbfr[1] = 84;
-                        tbfr[2] = 13;
+                        tbfr[2] = 50 + ACK;   // 49 for 30h + ACK + 1 for next
                         tbfr[3] = 0;
                         send(StreamSock, tbfr, 4, 0);
                         DelayMsec(delayT);
@@ -167,33 +190,58 @@ int main() {
 
                 if (rbfr[1] == 84) //T transfer
                 {
-                    if (rbfr[2] == 13){
+                    if (rbfr[2] == 49 + currentP){
                         sendWait = 0;
                         int wegud = 1;
                     }
+                    
+                    DelayMsec(delayT);
+                    
                     // 2 bytes for header, 16 for data, 1 for seq #, 1 for null
                     tlen = plen + 4;
                     
                     if((currentP-1)%P==0){ 
-                        if(currentP > 1)
-                            sendWait = 1;
-                        
                         int p,q;
                         for (p=0;p<4;p++){
-                            for (q=0;q<16;q++){
-                                sendPackets[p][q] = fullText[((currentP-1)+p)*16];
+                            
+                            int s = rand()%P;
+                            while(sendIndex[s] != 0){
+                                s = rand()%P;
                             }
-                        }   
+                            sendIndex[s] = 1;
+                            
+                            DelayMsec(delayT);
+                            
+                            fullSendPackets[s][0] = 0;
+                            fullSendPackets[s][1] = 76;
+                            fullSendPackets[s][18] = currentP+p;
+                            fullSendPackets[s][19] = 0;
+                            
+                            DelayMsec(delayT);
+                            
+                            for (q=0;q<16;q++){
+                                fullSendPackets[s][q+2] = fullText[((currentP-1)+p)*16];
+                            }   
+                        }  
+                        
+                        int l;
+                        for(l=0; l<4; l++){
+                            sendIndex[l] = 0;
+                        }
+                        int zeroed = 0;
+                        //memset(sendIndex, 0, 4);
                     }
                     
-                    buildTransmitPacket(packet, tlen, currentP, sendPackets);
-
-                    int j;
-                    // Copy the long text into the transmit buffer
-                    for (j = 0; j < tlen; j++) {
-                        tbfr[j] = packet[j];
+                    int m;
+                    for(m=0; m<20; m++){
+                        tbfr[m] = fullSendPackets[(currentP-1)%4][m];
                     }
 
+                    /*
+                    if(currentP > 1)
+                        sendWait = 1;
+                     * */
+                    
                     if (sendWait == 0){
                         send(StreamSock, tbfr, tlen, 0);
                         DelayMsec(delayT);
