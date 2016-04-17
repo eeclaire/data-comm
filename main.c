@@ -45,6 +45,7 @@ char getSyndrome(char r);
 char retrieveInfo(char r);
 
 void buildTransmitPacket(char packet[], int plen, int seq, char srcPackets[4][16]);
+int generateFCS(char data[]);
 
 int main() {
     srand(time(NULL));
@@ -146,7 +147,8 @@ int main() {
                 tlen = 1296; // send buffer size
                 setsockopt(StreamSock, SOL_SOCKET, TCP_NODELAY, (char*) &tlen, sizeof (int));
             }
-        } else {
+        } else {  
+            //THIS IS WHERE IT ALL BREAKs
             // receive TCP data
             rlen = recvfrom(StreamSock, rbfr, sizeof (rbfr), 0, NULL, NULL);
             if (rlen > 0) {
@@ -166,6 +168,18 @@ int main() {
                     if (rbfr[18] > ACK)
                         ACK = rbfr[18];
                     
+                    int ok = generateFCS(rbfr);
+                    
+                    if(ok != 0){
+                        tbfr[1] = 84;
+                        tbfr[2] = 32 + ACK;   // 32 for 20h + ACK + 1 for next
+                        tbfr[3] = 0;
+                        send(StreamSock, tbfr, 4, 0);
+                        DelayMsec(delayT);
+                        // Reset number of sequence numbers received
+                        rcvdSeqs = 0;
+                    }
+                    
                     int j;
                     for(j=0;j<16;j++){
                         rcvdPackets[(rbfr[18]-1)%P][j] = rbfr[j+2];
@@ -173,7 +187,7 @@ int main() {
                     }
                     
                     //if((rbfr[18]-1)%P == 0){
-                    if(rcvdSeqs%P == 0){
+                    if(rcvdSeqs%P == 0 && ok == 0){
                         DelayMsec(delayT);
                         // Send ACK for all okay
                         tbfr[1] = 84;
@@ -197,8 +211,8 @@ int main() {
                     
                     DelayMsec(delayT);
                     
-                    // 2 bytes for header, 16 for data, 1 for seq #, 1 for null
-                    tlen = plen + 4;
+                    // 2 bytes for header, 16 for data, 1 for seq #, 1 for FCS, 1 for null
+                    tlen = plen + 5;
                     
                     if((currentP-1)%P==0){ 
                         int p,q;
@@ -211,7 +225,6 @@ int main() {
                             sendIndex[s] = 1;
                             
                             DelayMsec(delayT);
-                            
                             fullSendPackets[s][0] = 0;
                             fullSendPackets[s][1] = 76;
                             fullSendPackets[s][18] = currentP+p;
@@ -221,15 +234,15 @@ int main() {
                             
                             for (q=0;q<16;q++){
                                 fullSendPackets[s][q+2] = fullText[((currentP-1)+p)*16];
-                            }   
-                        }  
-                        
+                            } 
+                            
+                            fullSendPackets[s][19] = generateFCS(fullSendPackets[s]);
+                        } 
                         int l;
                         for(l=0; l<4; l++){
                             sendIndex[l] = 0;
                         }
                         int zeroed = 0;
-                        //memset(sendIndex, 0, 4);
                     }
                     
                     int m;
@@ -237,11 +250,6 @@ int main() {
                         tbfr[m] = fullSendPackets[(currentP-1)%4][m];
                     }
 
-                    /*
-                    if(currentP > 1)
-                        sendWait = 1;
-                     * */
-                    
                     if (sendWait == 0){
                         send(StreamSock, tbfr, tlen, 0);
                         DelayMsec(delayT);
@@ -283,5 +291,26 @@ void buildTransmitPacket(char packet[], int plen, int seq, char srcPackets[4][16
     
     // Add the null terminator
     packet[19] = 0;
+   
+}
+
+int generateFCS(char data[]){
+    int divisor = 263;
+  
+    int start = data[0];
+    int second = data[1];
+    int last = data[19];
+    int dividend = data[0]*256 + data[1];
     
+    int r = dividend%divisor;
+    
+    int i;
+    for(i=2; i<20; i++){
+        dividend = r*256 + data[i]; 
+        r = dividend % divisor;
+    }
+    
+    dividend = r * 256;
+    r = dividend % divisor;
+    return r;
 }
